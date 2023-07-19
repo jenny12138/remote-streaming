@@ -70,7 +70,7 @@ if __name__ == '__main__':
     ap.add_argument("-o", "--port", type=int, required=True, help="ephemeral port number of the server (1024 to 65535)")
     args=vars(ap.parse_args())
 
-    # start a thread that will perform motion detection
+    # start a thread
     t = threading.Thread(target=return_frame)
     t.daemon = True
     t.start()
