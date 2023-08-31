@@ -1,11 +1,10 @@
 """
-Necessary imports
+Imports
 """
 import platform # to determine which version of Python is being run
 print("This script is run using Python interpreter", platform.python_version()) 
 import threading
 import argparse
-import datetime
 import time
 import flask
 import numpy as np
@@ -16,10 +15,10 @@ import cv2
 print("This script is using cv2 version", cv2.__version__)
 
 """
-Performing some initializations
+Setting up webcam and flask
 """
 lock = threading.Lock() # to prevent race condition; in this case, it ensures that one thread isn't trying to read the frame as it is being updated.
-app = Flask(__name__) # initialize a flask object
+app = Flask(__name__)
 try:
     camera = cv2.VideoCapture(0) # so that we can use the webcam
     print("Camera opened!")
@@ -27,11 +26,11 @@ except:
     print("Camera didn't open!")
 
 #fps = int(camera.get(cv2.CAP_PROP_FPS))
-fps = 10 #TODO: figure out fps
+fps = 18 #TODO: Figure out how to obtain FPS. The commented out code aboved yields NaN for FPS
 resize_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
-print("resize_width is ", resize_width)
+print("width of the webcam video is ", resize_width)
 resize_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
-print("resize_height is ", resize_height)
+print("height of the webcam video is ", resize_height)
 out = cv2.VideoWriter("test.mp4", cv2.VideoWriter_fourcc(*'mp4v'), fps, (resize_width, resize_height))
 
 """
@@ -41,11 +40,14 @@ Function to render the index.html template and serve up the output video stream
 def index():
     return render_template("index.html")
 
-def generate_frames():
+"""
+Function to grab frame from camera continuously
+"""
+def return_frame():
     global camera, lock, out
     try:
         while True:
-            with lock: # wait until the lock is acquired. We need to acquire the lock to ensure the frame variable is not accidentally being read by a client while we are trying to update it.
+            with lock: 
                 success, frame = camera.read() # read the camera frame
                 if not success:
                     break
@@ -56,26 +58,28 @@ def generate_frames():
                         continue
 
             frame_bytes = b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
-            app.frame_buffer = frame_bytes  # Store the generated frame in the app instance
+            app.cur_frame = frame_bytes
 
     except KeyboardInterrupt:
         out.release()
         camera.release()
-    
-def generate_frames_continuously():
-    while True:
-        if hasattr(app, 'frame_buffer'):
-            yield app.frame_buffer
-        else:
-            time.sleep(0.1)  # Adjust the delay as needed
 
 """
-Function to use the flask function Response
+Function to feed frame to Flask
+"""
+def generate_frames_continuously():
+    while True:
+        if hasattr(app, 'cur_frame'):
+            yield app.cur_frame
+        else:
+            time.sleep(0.1)
+
+"""
+Function to display the video on the webpage using Flask
 """
 @app.route("/video_feed")
 def video_feed():
-    return Response(generate_frames_continuously(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame")
+    return Response(generate_frames_continuously(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 """
 Handle parsing commmand line arguments and launch the Flask app
@@ -87,7 +91,7 @@ if __name__ == '__main__':
     args=vars(ap.parse_args())
 
     # start a thread that will perform motion detection
-    t = threading.Thread(target=generate_frames)
+    t = threading.Thread(target=return_frame)
     t.daemon = True
     t.start()
 
